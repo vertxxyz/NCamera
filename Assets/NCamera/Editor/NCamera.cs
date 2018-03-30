@@ -8,6 +8,7 @@ using System.IO;
 using System.Reflection;
 using UnityEditor.AnimatedValues;
 using UnityEngine.SceneManagement;
+using UnityEngine.UI;
 
 namespace Vertx
 {
@@ -555,8 +556,7 @@ namespace Vertx
 						//Functionality for zoom-to-cursor (and pivot manipulation with zoom)
 						if (rightMouseDown)
 						{
-							if (zoomToCursorIgnoresBackfaces && RaycastWorldIgnoreBackfaces(e.mousePosition, out hit)
-							    || !zoomToCursorIgnoresBackfaces && RaycastWorld(e.mousePosition, out hit))
+							if (RaycastWorld(e.mousePosition, out hit, zoomToCursorIgnoresBackfaces))
 							{
 								if (Vector3.Dot(sceneView.camera.transform.forward, hit.point - sceneView.camera.transform.position) < 0)
 								{
@@ -707,7 +707,8 @@ namespace Vertx
 		#region RaycastWorld
 
 		//Legacy raycast world that would hit backfaces. This is the default Unity implementation!
-		private static bool RaycastWorld(Vector2 position, out RaycastHit hit)
+		//It's broken with UI interaction currently. It has been reported as an issue.
+		/*private static bool RaycastWorld(Vector2 position, out RaycastHit hit)
 		{
 			hit = default(RaycastHit);
 			object[] args = {position, hit};
@@ -735,7 +736,7 @@ namespace Vertx
 			{
 				return _sceneViewMotionClass ?? (_sceneViewMotionClass = Type.GetType("UnityEditor.SceneViewMotion,UnityEditor"));
 			}
-		}
+		}*/
 
 		[SerializeField] private static MethodInfo _IntersectRayMesh;
 		private static MethodInfo IntersectRayMesh
@@ -748,7 +749,7 @@ namespace Vertx
 		}
 
 		
-		private static bool RaycastWorldIgnoreBackfaces(Vector2 position, out RaycastHit hit)
+		private static bool RaycastWorld(Vector2 position, out RaycastHit hit, bool ignoreBackfaces = true)
 		{
 			hit = default(RaycastHit);
 			Transform cameraTransform = Camera.current.transform;
@@ -763,14 +764,14 @@ namespace Vertx
 				Ray ray = HandleUtility.GUIPointToWorldRay(position);
 				Vector3 lastPos = cameraTransform.position;
 				Quaternion lastRot = cameraTransform.rotation;
-				result = IntersectWithRayIgnoreBackfaces(ray, gameObject, cameraTransform, out hit);
+				result = IntersectWithRay(ray, gameObject, cameraTransform, out hit, ignoreBackfaces);
 				cameraTransform.position = lastPos;
 				cameraTransform.rotation = lastRot;
 			}
 			return result;
 		}
 
-		static bool IntersectWithRayIgnoreBackfaces(Ray ray, GameObject gameObject, Transform cameraTransform, out RaycastHit hit)
+		static bool IntersectWithRay(Ray ray, GameObject gameObject, Transform cameraTransform, out RaycastHit hit, bool ignoreBackfaces = true)
 		{
 			while (true)
 			{
@@ -811,12 +812,30 @@ namespace Vertx
 				// ReSharper disable once CompareOfFloatsByEqualityOperator
 				if (num == float.PositiveInfinity)
 				{
-					hit.point = Vector3.Project(gameObject.transform.position - ray.origin, ray.direction) + ray.origin;
+					//If UI
+					if (gameObject.GetComponentInParent<Canvas>() != null)
+					{
+						//Handle interaction with UI by assuming that we've hit a graphic-type element that faces down its own forward axis.
+						Transform t = gameObject.transform;
+						Plane p = new Plane(t.forward, t.position);
+						if (p.Raycast(ray, out num))
+						{
+							hit.point = ray.origin + ray.direction * num;
+							hit.normal = t.forward;
+						}
+					}
 				}
 
-				if (Vector3.Dot(cameraTransform.forward, hit.normal) > 0)
+				// ReSharper disable once CompareOfFloatsByEqualityOperator
+				if (num == float.PositiveInfinity)
 				{
-					//Hit was backfaces!
+					hit.point = Vector3.Project(gameObject.transform.position - ray.origin, ray.direction) + ray.origin;
+					hit.normal = ray.direction;
+				}
+
+				if (ignoreBackfaces && Vector3.Dot(cameraTransform.forward, hit.normal) > 0)
+				{
+					//Hit was backfaces! do the pick logic again
 					cameraTransform.position = hit.point;
 					cameraTransform.rotation = Quaternion.LookRotation(ray.direction);
 					Vector2 position = new Vector2(Camera.current.pixelWidth / 2f, Camera.current.pixelHeight / 2f);
