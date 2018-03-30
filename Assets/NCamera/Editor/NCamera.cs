@@ -178,8 +178,6 @@ namespace Vertx
 			}
 
 			SceneView.onSceneGUIDelegate += OnLateSceneGUI;
-
-			sixAxisRotateUpTo.valueChanged.AddListener(SceneView.RepaintAll);
 		}
 
 		#endregion
@@ -271,37 +269,25 @@ namespace Vertx
 				//If we're in six-axis mode we should rotate back to Y-up regardless of whether the mouse is being interacted with or not.
 				if (cameraStatus == NCameraStatus.sixAxis && !sceneViewAnimatedRot(sceneView).isAnimating)
 				{
-					if (sixAxisRotateUpTo.isAnimating)
+					if (alignCameraAutomatically)
 					{
-						sceneView.rotation = sixAxisRotateUpTo.value;
-					}
-					else
-					{
-						if (alignCameraAutomatically)
+						Vector3 fwd = sceneView.rotation * Vector3.forward;
+						Vector3 right = sceneView.rotation * Vector3.right;
+						Vector3 sixAxisUpOrtho = sixAxisUp;
+						Vector3.OrthoNormalize(ref fwd, ref sixAxisUpOrtho);
+						float dotAbs = Mathf.Abs(Vector3.Dot(right, sixAxisUpOrtho));
+						if (dotAbs > 0.01f)
 						{
-							Vector3 fwd = sceneView.rotation * Vector3.forward;
-							Vector3 right = sceneView.rotation * Vector3.right;
-							Vector3 sixAxisUpOrtho = sixAxisUp;
-							Vector3.OrthoNormalize(ref fwd, ref sixAxisUpOrtho);
-							float dotAbs = Mathf.Abs(Vector3.Dot(right, sixAxisUpOrtho));
-							if (dotAbs > 0.01f)
-							{
-								sceneView.rotation = Quaternion.RotateTowards(sceneView.rotation,
-									Quaternion.LookRotation(sceneView.rotation * Vector3.forward, sixAxisUpOrtho),
-									(float) repaintDeltaTime * axisSpeed);
-								doRepaintScene = true;
-							}
-							else if (dotAbs > 0.001f)
-							{
-								sceneView.rotation = Quaternion.LookRotation(sceneView.rotation * Vector3.forward, sixAxisUpOrtho);
-							}
+							sceneView.rotation = Quaternion.RotateTowards(sceneView.rotation,
+								Quaternion.LookRotation(sceneView.rotation * Vector3.forward, sixAxisUpOrtho),
+								(float) repaintDeltaTime * axisSpeed);
+							doRepaintScene = true;
+						}
+						else if (dotAbs > 0.001f)
+						{
+							sceneView.rotation = Quaternion.LookRotation(sceneView.rotation * Vector3.forward, sixAxisUpOrtho);
 						}
 					}
-				}
-				else if (cameraStatus == NCameraStatus.trackball && !sceneViewAnimatedRot(sceneView).isAnimating)
-				{
-					if (sixAxisRotateUpTo.isAnimating)
-						sceneView.rotation = sixAxisRotateUpTo.value;
 				}
 			}
 		}
@@ -359,8 +345,7 @@ namespace Vertx
 					{
 						Transform camTransform = sceneView.camera.transform;
 						sixAxisUp = q * Vector3.back;
-						sixAxisRotateUpTo.value = camTransform.rotation;
-						sixAxisRotateUpTo.target = Quaternion.LookRotation(camTransform.forward, sixAxisUp);
+						sceneView.LookAt(sceneView.pivot, Quaternion.LookRotation(camTransform.forward, sixAxisUp));
 					};
 
 					AxisSelectorExtensions.AxisSelectorGUI(sceneView, sixAxisUp, Callback);
@@ -392,7 +377,6 @@ namespace Vertx
 		private const float zoomToCursorPivotIntensity = 0.8f;
 
 		private static Vector3 sixAxisUp = Vector3.up;
-		private static readonly AnimQuaternion sixAxisRotateUpTo = new AnimQuaternion(Quaternion.identity) {speed = 3f};
 		private static float deltaZoomOverall;
 		private static float lastCameraDistance;
 		private static Vector3 lastCameraPosition;
@@ -677,7 +661,7 @@ namespace Vertx
 					            cam.transform.right.z * sixAxisUp.y * cam.transform.up.x;
 					float angle = Mathf.Atan2(det, dot);
 
-					if (!sixAxisRotateUpTo.isAnimating)
+					if (!sceneViewAnimatedRot(sceneView).isAnimating)
 					{
 						if (Mathf.Abs(angle) > 1.55f)
 							sixAxisUp = RoundVector3ToInt(cam.transform.up);
