@@ -1,4 +1,4 @@
-﻿/* 2018-03-17 | Thomas Ingram */
+﻿/* 2018-03-30 | Thomas Ingram */
 
 #define NCAMERA
 using UnityEngine;
@@ -553,7 +553,11 @@ namespace Vertx
 									deltaZoomOverall = 0;
 //									Debug.DrawRay(hit.point, hit.normal * 20, Color.green);
 //									Debug.DrawLine(hit.point, Vector3.zero, Color.green);
+									#if UNITY_2017_1_OR_NEWER
 									lastCameraDistance = sceneView.cameraDistance;
+									#else
+									lastCameraDistance = (float)cameraDistance.GetValue(sceneView, null);
+									#endif
 									lastCameraPosition = sceneView.camera.transform.position;
 									didHitOnZoom = true;
 								}
@@ -687,6 +691,14 @@ namespace Vertx
 		private static Vector3 lastPivot;
 		private static RaycastHit hit;
 		private static bool didHitOnZoom;
+		
+		#if !UNITY_2017_1_OR_NEWER
+		private static PropertyInfo _cameraDistance;
+		private static PropertyInfo cameraDistance
+		{
+			get { return _cameraDistance ?? (_cameraDistance = typeof(SceneView).GetProperty("cameraDistance", BindingFlags.NonPublic | BindingFlags.Instance)); }
+		}
+		#endif
 
 		#region RaycastWorld
 
@@ -1005,14 +1017,17 @@ namespace Vertx
 
 			Vector3 screenPosition = new Vector3(x, y, FRONT_Z_DEPTH);
 
-			GL.TexCoord2(0, 0); // BL
-			GL.Vertex(screenPosition + new Vector3(0, -height, 0));
-			GL.TexCoord2(1, 0); // BR
-			GL.Vertex(screenPosition + new Vector3(width, -height, 0));
-			GL.TexCoord2(1, 1); // TR
-			GL.Vertex(screenPosition + new Vector3(width, 0, 0));
+			
+			
+			
 			GL.TexCoord2(0, 1); // TL
 			GL.Vertex(screenPosition + new Vector3(0, 0, 0));
+			GL.TexCoord2(1, 1); // TR
+			GL.Vertex(screenPosition + new Vector3(width, 0, 0));
+			GL.TexCoord2(1, 0); // BR
+			GL.Vertex(screenPosition + new Vector3(width, -height, 0));
+			GL.TexCoord2(0, 0); // BL
+			GL.Vertex(screenPosition + new Vector3(0, -height, 0));
 		}
 
 		private static Vector3 RoundVector3ToInt(Vector3 input)
@@ -1038,14 +1053,13 @@ namespace Vertx
 			get
 			{
 				if (_material != null) return _material;
-				Shader shader = Shader.Find("Particles/Alpha Blended");
+				Shader shader = Shader.Find("Unlit/Transparent Cutout");
 				_material = new Material(shader)
 				{
 					hideFlags = HideFlags.HideAndDontSave,
 					shader = {hideFlags = HideFlags.HideAndDontSave},
 					mainTexture = textureDefault
 				};
-				_material.SetColor("_TintColor", new Color(0.75f, 0.75f, 0.75f, 1));
 
 				return _material;
 			}
